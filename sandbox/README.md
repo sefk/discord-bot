@@ -1,14 +1,13 @@
 # discord-bot
 
-A Discord bot that bridges a Discord channel to an interactive Claude Code session running in tmux. Send messages from Discord, get responses back. The same Claude session is also visible and interactive in a local Ghostty terminal.
+A Discord bot that bridges a Discord channel to Claude Code. Send messages from Discord, get responses back. A local tmux session shows a live log of the conversation.
 
 ## How it works
 
-- Claude runs interactively in a tmux session (`claude`)
-- The bot runs in a second tmux session (`discord-bot`)
-- Messages posted in the `#bot` channel are sent to Claude via `tmux send-keys`
-- The bot polls `tmux capture-pane` until output stabilizes, then posts the response back to Discord
-- You can attach to the `claude` session locally at any time to watch or type alongside it
+- Each Discord message invokes `claude -p --continue` as a subprocess, capturing the response directly from stdout
+- Conversation context is preserved across messages via Claude's `--continue` flag
+- The bot runs in a tmux session (`discord-bot`)
+- A second tmux session (`claude`) tails the log at `/tmp/claude-vm.log` — attach to it to watch tool use and conversation history in real time
 
 ## Prerequisites
 
@@ -52,20 +51,13 @@ To get pinged in Discord when Claude stops or needs input, add to Claude Code's 
 ## Running manually
 
 ```sh
-# Start Claude session
-tmux new-session -d -s claude 'claude --dangerously-skip-permissions'
-
-# Attach in Ghostty to watch/interact locally
-tmux attach -t claude
-
-# Start the bot (in a separate terminal)
-source ~/.zsh_secret
-tmux new-session -d -s discord-bot 'cd ~/src/discord-bot && python3 bot.py'
+zsh ./sandbox/claude-vm.sh start
+tmux attach -t claude   # watch the log
 ```
 
 ## Auto-start on login
 
-A LaunchAgent is installed at `~/Library/LaunchAgents/com.sefkbot.claude-discord.plist`. It runs `start.sh` (in this directory) at login, which starts both tmux sessions if they aren't already running.
+A LaunchAgent is installed at `~/Library/LaunchAgents/com.sefkbot.claude-discord.plist`. It runs `sandbox/claude-vm.sh start` (from the repo root) at login, which starts both tmux sessions if they aren't already running.
 
 To reload after changes:
 
@@ -75,15 +67,14 @@ launchctl load ~/Library/LaunchAgents/com.sefkbot.claude-discord.plist
 ```
 
 Startup logs: `/tmp/claude-discord-startup.log`
+Claude conversation log: `/tmp/claude-vm.log`
 
-## Tuning
+## Configuration
 
 In `bot.py`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `STABLE_SECS` | `2.0` | Seconds of no pane change before response is considered complete. Increase if responses feel cut off. |
-| `POLL_SECS` | `0.5` | How often to check the pane. |
-| `TIMEOUT_SECS` | `300` | Max wait time before giving up. |
 | `CHANNEL_NAME` | `bot` | Discord channel to listen on. |
-| `TMUX_SESSION` | `claude` | tmux session name for the Claude process. |
+| `LOG_FILE` | `/tmp/claude-vm.log` | Path to the conversation log (tailed by the `claude` tmux session). |
+| `MAX_LEN` | `2000` | Discord message length limit for chunking long responses. |
